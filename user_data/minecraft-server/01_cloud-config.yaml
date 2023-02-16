@@ -1,0 +1,5 @@
+#cloud-config
+repo_upgrade: security
+packages:
+  - ec2-instance-connect
+  - amazon-ssm-agent
