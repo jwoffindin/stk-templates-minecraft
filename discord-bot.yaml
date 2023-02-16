@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Discord bot for interacting with Minecraft server
+
+Metadata:
+  stack:
+    deployed_at: "{{ deploy.timestamp }}"
+    version:
+      template_commit: "{{ deploy.template_sha }}"
+      template_ref: "{{ deploy.template_ref }}"
+      config_commit: "{{ deploy.config_sha }}"
+      config_ref: "{{ deploy.config_ref }}"
+    vars:
+      bucket_name: Name of bucket to create
+    iam_capabilities:
+      - CAPABILITY_IAM
+
+Resources:
+  ChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: "ChatOps bot."
+      Handler: index.handler
+      Runtime: python3.9
+      Layers:
+        - "{{ python_lambda_layer_arn }}"
+      CodeUri: {{ lambda_uri('discord-bot')}}
+      MemorySize: 256
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      # Role: !GetAtt ChatOpsFunctionRole.Arn
+      Timeout: 10
+      Environment:
+        Variables:
+          ENVIRONMENT: "{{ environment }}"
+          DISCORD_PUBLIC_KEY: "{{ discord_public_key }}"
+          FRONTEND_SECURITY_GROUP_ID: "{{ frontend_sg }}"
+          AUTOSCALING_GROUP: "{{ autoscaling_group }}"
+          ECS_SERVICE_ID: "{{ ecs_service_id }}"
+      Events:
+        ProxyResource:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: any
+            RestApiId: !Ref Api
+
+  ApiCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: "{{ api_endpoint }}"
+      DomainValidationOptions:
+            - DomainName: "{{ api_endpoint }}"
+              HostedZoneId: "{{ hosted_zone_id }}"
+      ValidationMethod: DNS
+
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: "{{ application }}-{{ environment}}"
+      StageName: "{{ environment }}"
+      Domain:
+        DomainName: "{{ api_endpoint }}"
+        CertificateArn: !Ref ApiCertificate
+        Route53: { HostedZoneId: "{{ hosted_zone_id }}" }
+      MethodSettings:
+        - MetricsEnabled: True
+          ResourcePath: '/*'
+          HttpMethod: '*'
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ChatFunction}'
+      RetentionInDays: 30
+
