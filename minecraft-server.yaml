@@ -67,21 +67,32 @@ Resources:
         ## endfor
       VpcId: {{ vpc_id }}
 
-  LaunchConfiguration:
-    Type: AWS::AutoScaling::LaunchConfiguration
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      AssociatePublicIpAddress: true
-      IamInstanceProfile: !Ref InstanceProfile
-      ImageId: {{ ami }}
-      InstanceType: {{ instance_type }}
-      ## if key_name is defined
-      KeyName: "{{ key_name }}"
-      ## endif
-      SecurityGroups: [ !Ref Ec2Sg ]
-      ## if spot_price
-      SpotPrice: {{ spot_price }}
-      ## endif
-      UserData: {{ user_data('minecraft-server')}}
+      LaunchTemplateData:
+        ImageId: {{ ami }}
+        InstanceType: {{ instance_type }}
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups: [!Ref Ec2Sg]
+            SubnetId: "{{ subnets[0] }}"
+
+        # Spot pricing
+        ## if spot_price
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            MaxPrice: {{ spot_price }}
+        ## endif
+
+        ## if key_name is defined
+        KeyName: "{{ key_name }}"
+        ## endif
+        UserData: {{ user_data('minecraft-server')}}
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -91,7 +102,9 @@ Resources:
     Properties:
       AutoScalingGroupName: "{{ stack_name }}-asg"
       DesiredCapacity: {{ 1 if running else 0 }}
-      LaunchConfigurationName: !Ref LaunchConfiguration
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
       NewInstancesProtectedFromScaleIn: true
       MaxSize: 1
       MinSize: 0
